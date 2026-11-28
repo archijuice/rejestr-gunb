@@ -1,0 +1,41 @@
+name: Aktualizacja rejestru GUNB
+
+# Codziennie razem ze strażnikiem przepisów Normografu (Pilnuj przepisów, 04:23 UTC):
+# pobiera rejestr GUNB (aktualizowany przez GUNB ok. 23:00), dzieli go na pliki gmin w dane/
+# i zapisuje jako jeden commit (historia jest nadpisywana, żeby repozytorium nie rosło).
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aktualizacja
+  cancel-in-progress: false
+
+jobs:
+  rwdz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - name: Przygotowanie danych
+        run: python3 tools/rwdz.py dane
+      - name: Kontrola kompletności
+        run: |
+          python3 - <<'PY'
+          import json
+          s = json.load(open('dane/_stan.json'))
+          print(s)
+          assert s['pozwolenia'] > 1_000_000 and s['zgloszenia'] > 500_000, 'za mało wpisów – plik GUNB niepełny?'
+          PY
+      - name: Zapis (jeden commit)
+        run: |
+          git config user.name "Normograf – aktualizacja"
+          git config user.email "noreply@github.com"
+          git checkout --orphan nowa
+          git add -A
+          git commit -q -m "Rejestr GUNB – stan $(python3 -c "import json;print(json.load(open('dane/_stan.json'))['data'])")"
+          git push -f origin nowa:main
